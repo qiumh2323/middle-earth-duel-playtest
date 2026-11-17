@@ -1,0 +1,11 @@
+#cards .card {touch-action:pan-x pan-y pinch-zoom;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#cards .card img {-webkit-user-drag:none;-webkit-touch-callout:none}
+#cards .card.discard-held {outline:3px solid #b38d39;outline-offset:2px}
+#discard-confirm {box-sizing:border-box;width:min(288px,calc(100% - 24px));padding:16px;border:1px solid #bcae8e;border-radius:9px;background:#fffdf5;color:#293b33;text-align:center}
+#discard-confirm::backdrop {background:#18231d70}
+#discard-confirm h2 {font-size:1rem;margin:0 0 10px}
+#discard-confirm img {display:block;width:66px;height:auto;margin:auto}
+#discard-confirm-copy {margin:10px 0;font-size:.88rem}
+.discard-confirm-buttons {display:flex;justify-content:center;gap:9px}
+.discard-confirm-buttons button {min-height:44px}
+@media(any-pointer:coarse) {#actions .touch-discard {display:block}}

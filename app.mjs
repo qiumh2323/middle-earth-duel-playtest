@@ -207,13 +207,52 @@ function drawMap(){
   ]);mapTarget(n,i);box.append(n);
  });drawRing();
 }
+const touchInput=matchMedia('(any-pointer:coarse)');
+function bindDiscard(card,slot){
+ let touch=null,timer,ignoreClickUntil=0;
+ const clear=()=>{clearTimeout(timer);touch=null;card.classList.remove('discard-held');};
+ card.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='mouse'||!e.isPrimary||card.disabled||busy)return;
+  clear();touch={id:e.pointerId,x:e.clientX,y:e.clientY,armed:false};
+  timer=setTimeout(()=>{if(touch&&card.isConnected&&!card.disabled&&!busy){touch.armed=true;card.classList.add('discard-held');}},480);
+ });
+ card.addEventListener('pointermove',e=>{if(touch?.id===e.pointerId&&Math.hypot(e.clientX-touch.x,e.clientY-touch.y)>10){ignoreClickUntil=performance.now()+650;clear();}});
+ card.addEventListener('pointercancel',e=>{if(touch?.id===e.pointerId){ignoreClickUntil=performance.now()+650;clear();}});
+ card.addEventListener('pointerup',e=>{
+  if(touch?.id!==e.pointerId)return;
+  const armed=touch.armed;clear();if(!armed)return;
+  ignoreClickUntil=performance.now()+650;e.preventDefault();
+  if(card.isConnected&&!card.disabled&&!busy)openDiscardConfirm(slot,card);
+ });
+ card.addEventListener('click',e=>{if(performance.now()<ignoreClickUntil&&e.detail!==0&&e.pointerType!=='mouse'){e.preventDefault();e.stopImmediatePropagation();}},true);
+ card.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  if(!touch&&!card.disabled&&!busy&&e.pointerType!=='touch'&&e.pointerType!=='pen'&&!e.sourceCapabilities?.firesTouchEvents&&performance.now()>=ignoreClickUntil)execute('discard',slot);
+ });
+}
+let discardTarget=null;
+function openDiscardConfirm(slot,card){
+ const entry=g.s.slots[slot],dialog=$('#discard-confirm');
+ if(!entry||!g.available(entry)||g.s.choice||dialog.open)return;
+ hideTip();hideOwnedZoom();discardTarget={game:g,slot,card};
+ const image=card.querySelector('img');
+ $('#discard-confirm-art').replaceChildren(...(image?[image.cloneNode()]:[]));
+ $('#discard-confirm-copy').textContent=cardText(entry.card)+' · 获得 '+g.s.chapter+' 金币';
+ dialog.showModal();
+}
+$('#discard-cancel').onclick=()=>$('#discard-confirm').close();
+$('#discard-apply').onclick=()=>{
+ const target=discardTarget;$('#discard-confirm').close();
+ if(target?.game===g&&target.card.isConnected&&!target.card.disabled)execute('discard',target.slot);
+};
+$('#discard-confirm').addEventListener('close',()=>{if(!$('#discard-confirm').open)discardTarget=null;});
 function drawCards(){
  const s=g.s,box=$('#cards'),max=Math.max(...s.slots.map(x=>s.slots.filter(y=>y.Row===x.Row).length));
  box.style.gridTemplateColumns='repeat('+(max*2)+',minmax(0,1fr))';box.replaceChildren();
  const counts={};for(const x of s.slots){const i=counts[x.Row]??0;counts[x.Row]=i+1;if(x.taken)continue;
   const row=s.slots.filter(y=>y.Row===x.Row).length, open=g.available(x), vis=g.visible(x), c=x.card;
   const n=btn(undefined,()=>execute('play',x.ID),'card '+(vis?(open?'open':'blocked'):'back'));n.dataset.slot=x.ID;n.disabled=!open||!!s.choice||!!s.victory||aiTurn();
-  n.addEventListener('contextmenu',e=>{e.preventDefault();if(!n.disabled)execute('discard',x.ID);});
+  bindDiscard(n,x.ID);
   n.style.gridColumnStart=s.chapter===3&&x.Row===4?2+i*4:max-row+1+i*2;n.style.gridColumnEnd='span 2';n.style.gridRow=x.Row;
   if(vis){n.style.setProperty('--c',colors[c.color][1]);n.append(el('b',colors[c.color][0]),el('span',c.effects.map(description).join('；')));if(c.chain?.requiresForFree&&s.players[viewerSide()].played.some(own=>own.chain.grants===c.chain.requiresForFree))n.classList.add('chain-ready');if(open)n.append(el('small',g.price(c).coins+' 金币'));}
   else n.textContent='未揭示';
@@ -235,7 +274,7 @@ function drawActions(){
  if(s.victory){a.append(el('p',s.victory.reason),btn('查看本局统计',showVictoryStats));return;}
  if(aiTurn()){heading.textContent='规则电脑正在行动';return;}
  if(s.choice){a.hidden=true;return;}
- if(!picked){a.append(el('p','左键建造章节牌或地标；右键弃掉可拿取的章节牌换金币。悬浮查看大图与效果。','hint'));const mobile=el('details',undefined,'touch-discard');mobile.append(el('summary','触屏弃牌'));for(const x of s.slots.filter(x=>g.available(x)))mobile.append(btn('弃掉'+colors[x.card.color][0]+'牌（+'+s.chapter+'金币）',()=>execute('discard',x.ID)));a.append(mobile);return;}
+ if(!picked){a.append(el('p',touchInput.matches?'轻点建造；长按可拿取的章节牌，选择弃牌换金币。':'左键建造章节牌或地标；右键弃掉可拿取的章节牌换金币。悬浮查看大图与效果。','hint'));const mobile=el('details',undefined,'touch-discard');mobile.append(el('summary','选择要弃的牌'));for(const x of s.slots.filter(x=>g.available(x)))mobile.append(btn('弃掉'+cardText(x.card),()=>openDiscardConfirm(x.ID,$(`[data-slot="${x.ID}"]`))));a.append(mobile);return;}
  const {type,i}=picked,c=type==='card'?s.slots[i].card:s.market[i],price=g.price(c);
  if(type==='card'&&artwork)a.append(art(artwork[c.id],cardText(c)));
  if(type==='landmark'){const pic=landmarkImage(c);pic.classList.add('landmark-preview');a.append(pic);}
