@@ -1,11 +1,26 @@
-#cards .card {touch-action:pan-x pan-y pinch-zoom;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-#cards .card img {-webkit-user-drag:none;-webkit-touch-callout:none}
-#cards .card.discard-held {outline:3px solid #b38d39;outline-offset:2px}
-#discard-confirm {box-sizing:border-box;width:min(288px,calc(100% - 24px));padding:16px;border:1px solid #bcae8e;border-radius:9px;background:#fffdf5;color:#293b33;text-align:center}
+.touch-previewable {touch-action:pan-x pan-y pinch-zoom;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.touch-previewable img {-webkit-user-drag:none;-webkit-touch-callout:none}
+.touch-previewable.discard-held {outline:3px solid #b38d39;outline-offset:2px}
+.touch-card-shell {min-width:0;display:grid}
+.touch-card-shell>.card {grid-area:auto;pointer-events:none;width:100%;min-width:0}
+#discard-confirm {box-sizing:border-box;width:min(380px,calc(100% - 24px));max-height:86dvh;overflow:auto;padding:14px;border:1px solid #bcae8e;border-radius:9px;background:#fffdf5;color:#293b33;text-align:center}
 #discard-confirm::backdrop {background:#18231d70}
 #discard-confirm h2 {font-size:1rem;margin:0 0 10px}
-#discard-confirm img {display:block;width:66px;height:auto;margin:auto}
-#discard-confirm-copy {margin:10px 0;font-size:.88rem}
-.discard-confirm-buttons {display:flex;justify-content:center;gap:9px}
+#discard-confirm-art :is(img,svg) {display:block;width:auto;max-width:100%;height:auto;max-height:42dvh;margin:auto;object-fit:contain}
+#discard-confirm-art svg {width:min(190px,100%)}
+#discard-confirm-copy {margin:10px 0;font-size:.88rem;text-align:left}
+#discard-confirm-copy .detail-title {display:none}
+#discard-confirm-copy dl {display:grid;grid-template-columns:max-content 1fr;gap:4px 10px;margin:0}
+#discard-confirm-copy dt {font-weight:700}
+#discard-confirm-copy dd {margin:0}
+.discard-confirm-buttons {display:flex;justify-content:center;gap:9px;position:sticky;bottom:-14px;padding:8px 0;background:#fffdf5}
 .discard-confirm-buttons button {min-height:44px}
 @media(any-pointer:coarse) {#actions .touch-discard {display:block}}
+@media(max-width:800px) {
+ .board .table-play,.board .world-column {display:contents}
+ .table-play>section:first-child {grid-row:3}
+ .world-column>.territory {grid-row:4}
+ .world-column>.landmark-panel {grid-row:5}
+ .table-play>.alliance-pool-panel {grid-row:6}
+ .board #collection-panel {grid-row:7}
+}

@@ -208,13 +208,13 @@ function drawMap(){
  });drawRing();
 }
 const touchInput=matchMedia('(any-pointer:coarse)');
-function bindDiscard(card,slot){
+function bindTouchPreview(card,preview,slot=null){
  let touch=null,timer,ignoreClickUntil=0;
  const clear=()=>{clearTimeout(timer);touch=null;card.classList.remove('discard-held');};
  card.addEventListener('pointerdown',e=>{
-  if(e.pointerType==='mouse'||!e.isPrimary||card.disabled||busy)return;
+  if(e.pointerType==='mouse'||!e.isPrimary||busy)return;
   clear();touch={id:e.pointerId,x:e.clientX,y:e.clientY,armed:false};
-  timer=setTimeout(()=>{if(touch&&card.isConnected&&!card.disabled&&!busy){touch.armed=true;card.classList.add('discard-held');}},480);
+  timer=setTimeout(()=>{if(touch&&card.isConnected&&!busy){touch.armed=true;card.classList.add('discard-held');ignoreClickUntil=performance.now()+650;preview();}},480);
  });
  card.addEventListener('pointermove',e=>{if(touch?.id===e.pointerId&&Math.hypot(e.clientX-touch.x,e.clientY-touch.y)>10){ignoreClickUntil=performance.now()+650;clear();}});
  card.addEventListener('pointercancel',e=>{if(touch?.id===e.pointerId){ignoreClickUntil=performance.now()+650;clear();}});
@@ -222,24 +222,26 @@ function bindDiscard(card,slot){
   if(touch?.id!==e.pointerId)return;
   const armed=touch.armed;clear();if(!armed)return;
   ignoreClickUntil=performance.now()+650;e.preventDefault();
-  if(card.isConnected&&!card.disabled&&!busy)openDiscardConfirm(slot,card);
  });
- card.addEventListener('click',e=>{if(performance.now()<ignoreClickUntil&&e.detail!==0&&e.pointerType!=='mouse'){e.preventDefault();e.stopImmediatePropagation();}},true);
+ card.addEventListener('click',e=>{if(performance.now()<ignoreClickUntil&&e.detail!==0){e.preventDefault();e.stopImmediatePropagation();}},true);
  card.addEventListener('contextmenu',e=>{
   e.preventDefault();
-  if(!touch&&!card.disabled&&!busy&&e.pointerType!=='touch'&&e.pointerType!=='pen'&&!e.sourceCapabilities?.firesTouchEvents&&performance.now()>=ignoreClickUntil)execute('discard',slot);
+  if(slot!==null&&!touch&&!card.disabled&&!busy&&e.pointerType!=='touch'&&e.pointerType!=='pen'&&!e.sourceCapabilities?.firesTouchEvents&&performance.now()>=ignoreClickUntil)execute('discard',slot);
  });
 }
 let discardTarget=null;
-function openDiscardConfirm(slot,card){
- const entry=g.s.slots[slot],dialog=$('#discard-confirm');
- if(!entry||!g.available(entry)||g.s.choice||dialog.open)return;
- hideTip();hideOwnedZoom();discardTarget={game:g,slot,card};
- const image=card.querySelector('img');
- $('#discard-confirm-art').replaceChildren(...(image?[image.cloneNode()]:[]));
- $('#discard-confirm-copy').textContent=cardText(entry.card)+' · 获得 '+g.s.chapter+' 金币';
+function openCardPreview(image,title,lines,slot=null,card=null){
+ const dialog=$('#discard-confirm');
+ if(dialog.open||busy)return;
+ hideTip();hideOwnedZoom();
+ discardTarget=slot!==null&&card&&!card.disabled&&g.available(g.s.slots[slot])&&!g.s.choice?{game:g,slot,card}:null;
+ $('#discard-confirm-title').textContent=title;
+ $('#discard-confirm-art').replaceChildren(...(artwork?[image()]:[]));
+ appendDetails($('#discard-confirm-copy'),title,lines);
+ const discard=$('#discard-apply');discard.hidden=!discardTarget;discard.textContent='弃牌 · 获得 '+g.s.chapter+' 金币';
  dialog.showModal();
 }
+function openDiscardConfirm(slot,card){const c=g.s.slots[slot].card;openCardPreview(()=>art(artwork?.[c.id],cardText(c)),colors[c.color][0]+'章节牌',details(c),slot,card);}
 $('#discard-cancel').onclick=()=>$('#discard-confirm').close();
 $('#discard-apply').onclick=()=>{
  const target=discardTarget;$('#discard-confirm').close();
@@ -252,13 +254,18 @@ function drawCards(){
  const counts={};for(const x of s.slots){const i=counts[x.Row]??0;counts[x.Row]=i+1;if(x.taken)continue;
   const row=s.slots.filter(y=>y.Row===x.Row).length, open=g.available(x), vis=g.visible(x), c=x.card;
   const n=btn(undefined,()=>execute('play',x.ID),'card '+(vis?(open?'open':'blocked'):'back'));n.dataset.slot=x.ID;n.disabled=!open||!!s.choice||!!s.victory||aiTurn();
-  bindDiscard(n,x.ID);
   n.style.gridColumnStart=s.chapter===3&&x.Row===4?2+i*4:max-row+1+i*2;n.style.gridColumnEnd='span 2';n.style.gridRow=x.Row;
   if(vis){n.style.setProperty('--c',colors[c.color][1]);n.append(el('b',colors[c.color][0]),el('span',c.effects.map(description).join('；')));if(c.chain?.requiresForFree&&s.players[viewerSide()].played.some(own=>own.chain.grants===c.chain.requiresForFree))n.classList.add('chain-ready');if(open)n.append(el('small',g.price(c).coins+' 金币'));}
   else n.textContent='未揭示';
   if(artwork){const img=art(vis?artwork[c.id]:'./original-art/chapter-'+s.chapter+'-back.png',vis?cardText(c):'未揭示');img.onerror=()=>{n.classList.remove('with-art');img.remove();};n.prepend(img);n.classList.add('with-art');if(open)n.dataset.price=g.price(c).coins+' 金币';}
-  if(vis)largePreview(n,()=>art(artwork?.[c.id],cardText(c)),colors[c.color][0]+'章节牌',()=>details(c,{blocked:!open}));
-  if(picked?.type==='card'&&picked.i===x.ID)n.classList.add('picked');box.append(n);
+  const image=()=>art(artwork?.[c.id],cardText(c)),lines=()=>details(c,{blocked:!open}),title=colors[c.color][0]+'章节牌';
+  if(vis)largePreview(n,image,title,lines,x.ID);
+  if(picked?.type==='card'&&picked.i===x.ID)n.classList.add('picked');
+  if(vis&&n.disabled&&touchInput.matches){
+   const shell=el('div',undefined,'touch-card-shell touch-previewable');
+   shell.style.gridColumn=n.style.gridColumn;shell.style.gridRow=n.style.gridRow;
+   shell.append(n);bindTouchPreview(shell,()=>openCardPreview(image,title,lines()));box.append(shell);
+  }else box.append(n);
  }
  $('#remaining').textContent=s.slots.filter(x=>!x.taken).length+' 张剩余';
  $('#discard-open').textContent='弃牌堆 '+s.discard.length;$('#discard-open').setAttribute('aria-label','查看弃牌堆，共'+s.discard.length+'张');
@@ -274,7 +281,7 @@ function drawActions(){
  if(s.victory){a.append(el('p',s.victory.reason),btn('查看本局统计',showVictoryStats));return;}
  if(aiTurn()){heading.textContent='规则电脑正在行动';return;}
  if(s.choice){a.hidden=true;return;}
- if(!picked){a.append(el('p',touchInput.matches?'轻点建造；长按可拿取的章节牌，选择弃牌换金币。':'左键建造章节牌或地标；右键弃掉可拿取的章节牌换金币。悬浮查看大图与效果。','hint'));const mobile=el('details',undefined,'touch-discard');mobile.append(el('summary','选择要弃的牌'));for(const x of s.slots.filter(x=>g.available(x)))mobile.append(btn('弃掉'+cardText(x.card),()=>openDiscardConfirm(x.ID,$(`[data-slot="${x.ID}"]`))));a.append(mobile);return;}
+ if(!picked){a.append(el('p',touchInput.matches?'轻点建造；长按看大图和效果。可拿取的章节牌可在预览中弃掉。':'左键建造章节牌或地标；右键弃掉可拿取的章节牌换金币。悬浮查看大图与效果。','hint'));const mobile=el('details',undefined,'touch-discard');mobile.append(el('summary','选择要弃的牌'));for(const x of s.slots.filter(x=>g.available(x)))mobile.append(btn('弃掉'+cardText(x.card),()=>openDiscardConfirm(x.ID,$(`[data-slot="${x.ID}"]`))));a.append(mobile);return;}
  const {type,i}=picked,c=type==='card'?s.slots[i].card:s.market[i],price=g.price(c);
  if(type==='card'&&artwork)a.append(art(artwork[c.id],cardText(c)));
  if(type==='landmark'){const pic=landmarkImage(c);pic.classList.add('landmark-preview');a.append(pic);}
@@ -325,7 +332,9 @@ function inspectOwned(c,title='已建造章节牌'){
 }
 let ownedHover;
 function hideOwnedZoom(){clearTimeout(ownedHover);$('#owned-zoom').hidden=true;}
-function largePreview(node,image,title,lines){
+function largePreview(node,image,title,lines,slot=null){
+ node.classList.add('touch-previewable');
+ bindTouchPreview(node,()=>openCardPreview(image,title,lines(),slot,node),slot);
  const show=()=>{if(busy||!node.isConnected||document.querySelector('dialog[open]'))return;hideTip();const box=$('#owned-zoom');box.replaceChildren();
   if(artwork)box.append(image());
   const text=el('section');appendDetails(text,title,lines());box.append(text);box.hidden=false;
