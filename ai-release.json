@@ -1,8 +1,8 @@
 {
-  "version": "v0.34",
-  "generation": 357,
+  "version": "v0.35",
+  "generation": 629,
   "simulations": 32,
   "information": "AI sees full deal",
-  "model": "champion-r0357.json",
-  "sha256": "83d49343772b6c1a60760eb910e4c39f4868d329822ad1501392d00fd4f0c803"
+  "model": "champion-r0629.json",
+  "sha256": "66f67e608e10d6a725fe15a75cff2822357b3c52f524928b88b0640434e5257a"
 }
