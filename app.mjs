@@ -1,5 +1,4 @@
-import {createGame} from './engine.mjs';
-import {decide,observe} from './ai.mjs';
+import {createGame} from './engine.mjs?v=34';
 import {landmarkIcon,pawnIcon,originalPawn} from './board-icons.mjs?v=11';
 const $=s=>document.querySelector(s), names=['护戒同盟','索伦'];
 const words={Lindon:'林顿',Arnor:'亚尔诺',Rhovanion:'罗瓦尼安',Enedwaith:'埃奈德',Rohan:'洛汗',Gondor:'刚铎',Mordor:'魔多',BaradDur:'巴拉督尔',Bree:'布理',Erebor:'孤山',GreyHavens:'灰港',HelmsDeep:'圣盔谷',Isengard:'艾森加德',MinasTirith:'米那斯提力斯',Elves:'精灵',Dwarves:'矮人',Hobbits:'霍比特人',Humans:'人类',Ents:'树人',Wizards:'巫师',Eagles:'巨鹰',Ruse:'诡计',Strength:'力量',Courage:'勇气',Knowledge:'知识',Leadership:'领导力'};
@@ -9,6 +8,7 @@ const sym={HARP:'竖琴',ANVIL:'铁砧',POT:'锅',HORSESHOE:'马蹄铁',FISH:'�
 const originalFlags={Lindon:[16,32],Arnor:[43,25],Rhovanion:[81,33],Enedwaith:[39,58],Rohan:[67,61],Gondor:[55,83],Mordor:[88,81]};
 const fortressAnchors={Lindon:[6.9,26.6],Arnor:[34.2,19.2],Rhovanion:[70.9,27],Enedwaith:[29.5,52.5],Rohan:[57.1,55.8],Gondor:[45.4,78],Mordor:[78.5,75.5]};
 let g, data, board, picked=null, artwork=null, aiSide=null, timer=null;
+let searchModule, championModel, loading=false;
 let busy=false;
 let matchStats=null,resultShown=false;
 let publicCardKnowledge=new Set(),discardKnowledge=[new Set(),new Set()];
@@ -68,7 +68,7 @@ function cardText(c){return (colors[c.color]?.[0]??'')+' · '+c.effects.map(desc
 function pick(type,i){picked={type,i};render();if(matchMedia('(max-width:800px)').matches)$('#actions').scrollIntoView({block:'nearest'});$('#actions h2')?.focus({preventScroll:true});}
 function scheduleAI(){
  if(!aiTurn()||timer!==null||busy)return;
- timer=setTimeout(()=>{timer=null;if(!aiTurn())return;try{const a=decide(observe(g));if(!a)throw Error('no legal plan');const source=a[0]==='landmark'?$('#landmarks').children[a[1]]:a[0]==='choice'?$('#actions'):$(`[data-slot="${a[1]}"]`);transition(()=>a[0]==='choice'?g.select(a[1]):g.action(...a),source,a[0],a[0]==='landmark'?g.s.market[a[1]]:null);}catch(e){console.error(e);$('#actions').append(el('p','电脑未能继续行动，请返回准备界面重开。'));}},450);
+ timer=setTimeout(()=>{timer=null;if(!aiTurn())return;try{const r=searchModule.search(g,championModel,32,1,false),a=r.actions[r.index];if(!a)throw Error('no legal plan');const source=a[0]==='landmark'?$('#landmarks').children[a[1]]:a[0]==='choice'?$('#actions'):$(`[data-slot="${a[1]}"]`);transition(()=>a[0]==='choice'?g.select(a[1]):g.action(...a),source,a[0],a[0]==='landmark'?g.s.market[a[1]]:null);}catch(e){console.error(e);$('#actions').append(el('p','电脑未能继续行动，请返回准备界面重开。'));}},450);
 }
 function execute(type,i){if(aiTurn()||busy)return;const c=type==='landmark'?g.s.market[i]:g.s.slots[i]?.card;if(!c)return;if(type!=='discard'&&g.price(c).coins>g.s.players[g.s.turn].coins){notify('金币不足：还缺 '+(g.price(c).coins-g.s.players[g.s.turn].coins)+' 金币');return;}transition(()=>g.action(type,i),type==='landmark'?$('#landmarks').children[i]:$(`[data-slot="${i}"]`),type,type==='landmark'?c:null);}
 function art(src,alt){const n=el('img',undefined,'component-art');n.src=src;n.alt=alt;n.decoding='async';return n;}
@@ -166,7 +166,7 @@ let ringVisibility,ringDismiss;
 let moveChoice,moveFrom=null;
 function choiceKind(c=g.s.choice,includeAI=false){
  if(!c||(!includeAI&&aiTurn())||g.s.victory)return null;
- return [['选择部署','map'],['移动 1 支','move'],['移除敌方','map'],['选择一枚结盟','token'],['选择结盟标记所属族群','race'],['从弃牌堆','discard'],['弃掉对手','gray'],['选择谋略','tactics']].find(([prefix])=>c.label.startsWith(prefix))?.[1];
+ return [['选择部署','map'],['移动 1 支','move'],['移除敌方','map'],['选择一枚结盟','token'],['选择结盟标记所属族群','race'],['从弃牌堆','discard'],['弃掉对手','gray'],['选择谋略','tactics'],['是否额外行动','tactics']].find(([prefix])=>c.label.startsWith(prefix))?.[1];
 }
 function selectHere(c,i,node){if(!busy&&!aiTurn()&&g.s.choice===c&&c.options[i]){if($('#effect-choice').open)$('#effect-choice').close();transition(()=>g.select(i),node?.isConnected&&node.getClientRects().length?node:null,'choice');}}
 function localGuide(selector,kinds,message){
@@ -279,7 +279,7 @@ function drawCards(){
 function drawActions(){
  const s=g.s, a=$('#actions');a.hidden=false;a.replaceChildren();const heading=el('h2',s.choice?.label??'本回合');heading.tabIndex=-1;a.append(heading);
  if(s.victory){a.append(el('p',s.victory.reason),btn('查看本局统计',showVictoryStats));return;}
- if(aiTurn()){heading.textContent='规则电脑正在行动';return;}
+ if(aiTurn()){heading.textContent='电脑正在行动';return;}
  if(s.choice){a.hidden=true;return;}
  if(!picked){a.append(el('p',touchInput.matches?'轻点建造；长按看大图和效果。可拿取的章节牌可在预览中弃掉。':'左键建造章节牌或地标；右键弃掉可拿取的章节牌换金币。悬浮查看大图与效果。','hint'));const mobile=el('details',undefined,'touch-discard');mobile.append(el('summary','选择要弃的牌'));for(const x of s.slots.filter(x=>g.available(x)))mobile.append(btn('弃掉'+cardText(x.card),()=>openDiscardConfirm(x.ID,$(`[data-slot="${x.ID}"]`))));a.append(mobile);return;}
  const {type,i}=picked,c=type==='card'?s.slots[i].card:s.market[i],price=g.price(c);
@@ -473,7 +473,23 @@ function render(){
  if($('#discard-detail').open)drawDiscard();
  $('#log').replaceChildren(...s.log.slice().reverse().map(l=>el('li',l)));
 }
-$('#start').onclick=()=>{const seat=$('#seat').value;aiSide=$('#mode').value==='pve'?(seat==='random'?Math.floor(Math.random()*2):1-Number(seat)):null;g=createGame(data,board);matchStats={startedAt:Date.now(),endedAt:null,players:[0,1].map(()=>({turns:0,build:0,discard:0,landmark:0,landmarks:[],choices:0}))};resultShown=false;$('#match-summary').hidden=true;publicCardKnowledge=new Set();discardKnowledge=[new Set(),new Set()];picked=null;$('#ring').replaceChildren();$('#lobby').hidden=true;$('#game').hidden=false;render();window.scrollTo(0,0);scheduleAI();};
+$('#start').onclick=async()=>{
+ if(loading)return;
+ const seat=$('#seat').value,pve=$('#mode').value==='pve',button=$('#start');
+ if(pve&&!championModel){
+  loading=true;button.disabled=true;button.textContent='正在加载电脑模型…';$('#status').textContent='';
+  try{
+   const [module,model]=await Promise.all([import('./model-search-r0357.mjs'),read('./champion-r0357.json')]);
+   const spec=module.schema();
+   if(model.schema!==spec.version||model.input!==spec.input||model.actionInput!==spec.actionInput)throw Error('模型维度不匹配');
+   searchModule=module;championModel=model;
+  }catch(e){$('#status').textContent='电脑模型加载失败，请重试。';console.error(e);return;}
+  finally{loading=false;button.disabled=false;button.textContent='开始对战';}
+ }
+ $('#status').textContent='';aiSide=pve?(seat==='random'?Math.floor(Math.random()*2):1-Number(seat)):null;
+ g=pve?createGame(searchModule.cards,searchModule.board,Math.random,{training:true}):createGame(data,board);
+ matchStats={startedAt:Date.now(),endedAt:null,players:[0,1].map(()=>({turns:0,build:0,discard:0,landmark:0,landmarks:[],choices:0}))};resultShown=false;$('#match-summary').hidden=true;publicCardKnowledge=new Set();discardKnowledge=[new Set(),new Set()];picked=null;$('#ring').replaceChildren();$('#lobby').hidden=true;$('#game').hidden=false;render();window.scrollTo(0,0);scheduleAI();
+};
 $('#return').onclick=()=>{if(!g.s.victory&&!confirm('返回准备界面将结束本局。确定返回？'))return;ringDismiss?.();ringVisibility?.abort();hideTip();clearTimeout(timer);timer=null;g=null;picked=null;$('#game').hidden=true;$('#lobby').hidden=false;$('#start').focus();window.scrollTo(0,0);};
 $('#mode').onchange=()=>{$('#seat-field').hidden=$('#mode').value==='pvp';};
 const read=async f=>{const r=await fetch(f);if(!r.ok)throw Error(f);return r.json();};

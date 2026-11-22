@@ -1,14 +1,15 @@
 const all=(o)=>Object.entries(o).filter(([,n])=>n>0);
 const effect=(Type,props={})=>({Type,...props});
-export function createGame(cards,board,random=Math.random){
+export function createGame(cards,board,random=Math.random,{snapshot,training=false}={}){
  const shuffle=(a)=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
  const regions=board.regions.map(r=>r.Name), other=()=>1-s.turn, p=()=>s.players[s.turn];
- const s={chapter:0,turn:1,players:[3,2].map(coins=>({coins,played:[],races:{},tokens:[],trio:false,ring:0})),units:regions.map(r=>[r==='Arnor'?2:0,r==='Mordor'?2:0]),forts:regions.map(()=>null),market:[],landmarks:shuffle(board.landmarks),discard:[],slots:[],queue:[],choice:null,extra:false,victory:null,log:[]};
- const stacks=Object.fromEntries(board.races.map(r=>[r.Name,shuffle(r.AllianceTokens.map((t,i)=>({...t,race:r.Name,id:r.Name+'-'+i})))]));
+ const s=snapshot?.state??{chapter:0,turn:1,players:[3,2].map(coins=>({coins,played:[],races:{},tokens:[],trio:false,ring:0})),units:regions.map(r=>[r==='Arnor'?2:0,r==='Mordor'?2:0]),forts:regions.map(()=>null),market:[],landmarks:shuffle(board.landmarks),discard:[],slots:[],queue:[],choice:null,extra:false,victory:null,log:[]};
+ const stacks=snapshot?.stacks??Object.fromEntries(board.races.map(r=>[r.Name,shuffle(r.AllianceTokens.map((t,i)=>({...t,race:r.Name,id:r.Name+'-'+i})))]));
+ const decks=training?(snapshot?.decks??[1,2,3].map(n=>shuffle(cards.filter(c=>c.chapter===n)))):null;
  const log=(message)=>s.log.push(message);
  const refill=()=>{while(s.market.length<3&&s.landmarks.length)s.market.push(s.landmarks.shift());};
- function chapter(){s.chapter++;const deck=shuffle(cards.filter(c=>c.chapter===s.chapter));s.slots=board.layouts[s.chapter-1].map((d,i)=>({...d,card:deck[i],taken:false}));s.discard.push(...deck.slice(20));refill();log('第 '+s.chapter+' 章开始');}
- chapter();
+ function chapter(){s.chapter++;const deck=decks?.[s.chapter-1]??shuffle(cards.filter(c=>c.chapter===s.chapter));s.slots=board.layouts[s.chapter-1].map((d,i)=>({...d,card:deck[i],taken:false}));s.discard.push(...deck.slice(20));refill();log('第 '+s.chapter+' 章开始');}
+ if(!snapshot)chapter();
  const available=(slot)=>!slot.taken&&slot.DependsOn.every(i=>s.slots[i].taken);
  const visible=(slot)=>!slot.taken&&(slot.IsFaceUp||available(slot));
  const count=(i)=>s.units.filter((u,j)=>u[i]>0||s.forts[j]===i).length;
@@ -37,7 +38,7 @@ export function createGame(cards,board,random=Math.random){
  const option=(label,value)=>({label,value});
  function choose(label,options,apply,optional=true){if(!options.length)return;if(optional)options.push(option('跳过此效果',null));s.choice={label,options,apply};}
  function tokens(races){return races.flatMap(([race,n])=>stacks[race].slice(0,n));}
- function pickToken(opts){choose('选择一枚结盟标记',opts.map(t=>option(t.id,t)),t=>{stacks[t.race].splice(stacks[t.race].indexOf(t),1);p().tokens.push(t);if(t.Type==='OneTimeImmediateRaceEffect')front(t.Effect);},false);}
+ function pickToken(opts){choose('选择一枚结盟标记',opts.map(t=>option(t.id,t)),{kind:'token'},false);}
  function play(c,chained=false){
   const current=[...p().tokens];p().played.push(c);
   const effects=c.effects.map(e=>c.color==='red'&&e.Type==='PlaceUnitsOnCentralBoard'?{...e,UnitsToPlace:e.UnitsToPlace+Number(attr('PLACE_EXTRA_UNIT_FOR_RED_CARD')),PossibleRegionsToPlace:attr('PLACE_ANYWHERE_FOR_RED_CARD')?regions:e.PossibleRegionsToPlace}:e);
@@ -45,6 +46,7 @@ export function createGame(cards,board,random=Math.random){
  }
  function finish(){
   if(s.slots.every(x=>x.taken)){if(s.chapter===3){const a=count(0),b=count(1);win('第三章结束 · 比较地区势力',a===b?null:a>b?0:1);return;}chapter();}
+  if(s.extra&&training){s.extra=false;choose('是否额外行动',[option('再行动一次',true),option('结束回合',false)],{kind:'extra'},false);return;}
   if(!s.extra)s.turn=other();s.extra=false;
  }
  function resolve(e){
@@ -63,23 +65,23 @@ export function createGame(cards,board,random=Math.random){
     const colors=Object.keys(p().races).filter(k=>stacks[k]);
     if(!p().trio&&colors.length>=3){p().trio=true;s.queue.splice(n===2&&stacks[race]?1:0,0,effect('PickAlliance',{races:colors.slice(0,3).map(x=>[x,1])}));}break;}
    case 'PickAlliance':pickToken(tokens(e.races));break;
-   case 'RevealAllianceTokensAndChooseSome':choose('选择结盟标记所属族群',e.RacesToRevealFrom.filter(r=>stacks[r].length).map(r=>option(r,r)),r=>pickToken(tokens([[r,e.TokensToReveal]])));break;
+   case 'RevealAllianceTokensAndChooseSome':choose('选择结盟标记所属族群',e.RacesToRevealFrom.filter(r=>stacks[r].length).map(r=>option(r,r)),{kind:'race',e});break;
    case 'PlaceUnitsOnCentralBoard':{
     if(!unitsLeft())break;
     const split=e.Strategy==='EVERY_UNIT_FREELY', options=e.PossibleRegionsToPlace.map(r=>option(r,regions.indexOf(r)));
-    const place=j=>{addUnits(j,split?1:e.UnitsToPlace);if(split&&e.UnitsToPlace>1)front({...e,UnitsToPlace:e.UnitsToPlace-1});};
-    if(options.length===1)place(options[0].value);else choose('选择部署地区',options,place);break;}
+    const how={kind:'place',e,split};
+    if(options.length===1)applyChoice(how,options[0].value);else choose('选择部署地区',options,how);break;}
    case 'MoveUnitsOnCentralBoard':{
     const options=board.regions.flatMap((r,i)=>s.units[i][s.turn]?r.ConnectedWith.map(b=>option(r.Name+' → '+b,[i,regions.indexOf(b)])):[]);
-    choose('移动 1 支部队（剩余 '+e.UnitsToMove+' 次）',options,([i,j])=>{s.units[i][s.turn]--;addUnits(j,1);if(e.UnitsToMove>1)front({...e,UnitsToMove:e.UnitsToMove-1});});break;}
-   case 'TakeEnemyUnitFromCentralBoard':choose('移除敌方部队',regions.flatMap((r,j)=>s.units[j][other()]?[option(r,j)]:[]),j=>{s.units[j][other()]--;if(e.UnitsToTake>1)front({...e,UnitsToTake:e.UnitsToTake-1});});break;
-   case 'RemoveEnemyFortress':choose('移除敌方要塞',regions.flatMap((r,j)=>s.forts[j]===other()?[option(r,j)]:[]),j=>{s.forts[j]=null;});break;
-   case 'DiscardEnemyGreyCard':choose('弃掉对手一张灰牌',s.players[other()].played.flatMap((c,i)=>c.color==='gray'?[option(c.id,i)]:[]),i=>s.discard.push(...s.players[other()].played.splice(i,1)));break;
-   case 'PlayDiscardedChapterCard':choose('从弃牌堆免费建造一张',s.discard.map((c,i)=>option(c.id,i)),i=>play(s.discard.splice(i,1)[0]));break;
+    choose('移动 1 支部队（剩余 '+e.UnitsToMove+' 次）',options,{kind:'move',e});break;}
+   case 'TakeEnemyUnitFromCentralBoard':choose('移除敌方部队',regions.flatMap((r,j)=>s.units[j][other()]?[option(r,j)]:[]),{kind:'removeUnit',e});break;
+   case 'RemoveEnemyFortress':choose('移除敌方要塞',regions.flatMap((r,j)=>s.forts[j]===other()?[option(r,j)]:[]),{kind:'removeFort'});break;
+   case 'DiscardEnemyGreyCard':choose('弃掉对手一张灰牌',s.players[other()].played.flatMap((c,i)=>c.color==='gray'?[option(c.id,i)]:[]),{kind:'discardGray'});break;
+   case 'PlayDiscardedChapterCard':choose('从弃牌堆免费建造一张',s.discard.map((c,i)=>option(c.id,i)),{kind:'recover'});break;
    case 'MultiChoice':{
     const opts=e.PossibleActions[0]?.Type==='MultiChoice'?e.PossibleActions[0].PossibleActions:e.PossibleActions;
     const labels={TakeEnemyUnitFromCentralBoard:'移除一支敌军',TakeEnemyCoins:'对手失去一枚金币',MoveUnitsOnCentralBoard:'移动一支部队'};
-    choose('选择谋略（剩余 '+e.ActionsToTake+' 次）',opts.map((a,i)=>option(labels[a.Type]??a.Type,i)),i=>{front(opts[i],...(e.ActionsToTake>1?[{...e,ActionsToTake:e.ActionsToTake-1}]:[]));});break;}
+    choose('选择谋略（剩余 '+e.ActionsToTake+' 次）',opts.map((a,i)=>option(labels[a.Type]??a.Type,i)),{kind:'maneuver',e,opts});break;}
    default:throw Error('未知效果 '+e.Type);
   }
  }
@@ -99,6 +101,27 @@ export function createGame(cards,board,random=Math.random){
   }
   drain();return true;
  }
- function select(i){const ch=s.choice;if(!ch||!ch.options[i])return false;s.choice=null;const v=ch.options[i].value;if(v!==null)ch.apply(v);drain();return true;}
- return {s,price,available,visible,count,raceCount,action,select,regions,skillEffects};
+ function applyChoice({kind,e,split,opts},v){
+  switch(kind){
+   case 'token':{const stack=stacks[v.race],i=stack.findIndex(t=>t.id===v.id);if(i<0)throw Error('Missing alliance token');const [t]=stack.splice(i,1);p().tokens.push(t);if(t.Type==='OneTimeImmediateRaceEffect')front(t.Effect);break;}
+   case 'race':pickToken(tokens([[v,e.TokensToReveal]]));break;
+   case 'place':addUnits(v,split?1:e.UnitsToPlace);if(split&&e.UnitsToPlace>1)front({...e,UnitsToPlace:e.UnitsToPlace-1});break;
+   case 'move':s.units[v[0]][s.turn]--;addUnits(v[1],1);if(e.UnitsToMove>1)front({...e,UnitsToMove:e.UnitsToMove-1});break;
+   case 'removeUnit':s.units[v][other()]--;if(e.UnitsToTake>1)front({...e,UnitsToTake:e.UnitsToTake-1});break;
+   case 'removeFort':s.forts[v]=null;break;
+   case 'discardGray':s.discard.push(...s.players[other()].played.splice(v,1));break;
+   case 'recover':play(s.discard.splice(v,1)[0]);break;
+   case 'maneuver':front(opts[v],...(e.ActionsToTake>1?[{...e,ActionsToTake:e.ActionsToTake-1}]:[]));break;
+   default:throw Error('Unknown choice '+kind);
+  }
+ }
+ function select(i){const ch=s.choice;if(!ch||!ch.options[i])return false;s.choice=null;const v=ch.options[i].value;if(ch.apply.kind==='extra'){if(!v)s.turn=other();return true;}if(v!==null)applyChoice(ch.apply,v);drain();return true;}
+ function fork(){
+  if(!training)throw Error('Fork requires a predealt training game');
+  const state={...s,players:s.players.map(x=>({...x,played:[...x.played],races:{...x.races},tokens:[...x.tokens]})),units:s.units.map(u=>[...u]),forts:[...s.forts],market:[...s.market],landmarks:[...s.landmarks],discard:[...s.discard],slots:s.slots.map(x=>({...x})),queue:[...s.queue],log:[]};
+  return createGame(cards,board,random,{training,snapshot:{state,decks,stacks:Object.fromEntries(Object.entries(stacks).map(([k,a])=>[k,[...a]]))}});
+ }
+ const game={s,price,available,visible,count,raceCount,action,select,regions,skillEffects};
+ if(training)Object.assign(game,{fork,decks,stacks});
+ return game;
 }
