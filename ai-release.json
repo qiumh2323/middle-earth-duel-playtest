@@ -1,20 +1,20 @@
 {
-  "version": "v0.37",
+  "version": "v0.38",
   "generation": 703,
   "modes": {
     "blue": {
-      "worlds": 4,
-      "simulations": 16,
+      "worlds": 3,
+      "simulations": 32,
       "open": false
     },
     "green": {
       "worlds": 4,
-      "simulations": 64,
+      "simulations": 512,
       "open": false
     },
     "red": {
       "worlds": 1,
-      "simulations": 512,
+      "simulations": 2048,
       "open": true
     }
   },

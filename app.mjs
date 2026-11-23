@@ -488,7 +488,7 @@ $('#start').onclick=async()=>{
  if(pve&&!championModel){
   loading=true;button.disabled=true;button.textContent='正在加载电脑模型…';$('#status').textContent='';
   try{
-   const [module,model]=await Promise.all([import('./model-search-r0703-levels.mjs'),read('./champion-r0703.json')]);
+   const [module,model]=await Promise.all([import('./model-search-r0703-levels.mjs?v=38'),read('./champion-r0703.json')]);
    const spec=module.schema();
    if(model.schema!==spec.version||model.input!==spec.input||model.actionInput!==spec.actionInput)throw Error('模型维度不匹配');
    searchModule=module;championModel=model;
