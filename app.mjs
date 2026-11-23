@@ -1,4 +1,4 @@
-import {createGame} from './engine.mjs?v=34';
+import {createGame} from './engine.mjs?v=37';
 import {landmarkIcon,pawnIcon,originalPawn} from './board-icons.mjs?v=11';
 const $=s=>document.querySelector(s), names=['护戒同盟','索伦'];
 const words={Lindon:'林顿',Arnor:'亚尔诺',Rhovanion:'罗瓦尼安',Enedwaith:'埃奈德',Rohan:'洛汗',Gondor:'刚铎',Mordor:'魔多',BaradDur:'巴拉督尔',Bree:'布理',Erebor:'孤山',GreyHavens:'灰港',HelmsDeep:'圣盔谷',Isengard:'艾森加德',MinasTirith:'米那斯提力斯',Elves:'精灵',Dwarves:'矮人',Hobbits:'霍比特人',Humans:'人类',Ents:'树人',Wizards:'巫师',Eagles:'巨鹰',Ruse:'诡计',Strength:'力量',Courage:'勇气',Knowledge:'知识',Leadership:'领导力'};
@@ -9,6 +9,8 @@ const originalFlags={Lindon:[16,32],Arnor:[43,25],Rhovanion:[81,33],Enedwaith:[3
 const fortressAnchors={Lindon:[6.9,26.6],Arnor:[34.2,19.2],Rhovanion:[70.9,27],Enedwaith:[29.5,52.5],Rohan:[57.1,55.8],Gondor:[45.4,78],Mordor:[78.5,75.5]};
 let g, data, board, picked=null, artwork=null, aiSide=null, timer=null;
 let searchModule, championModel, loading=false;
+let difficulty='green', seenLandmarks=new Set(), seenTokens=new Map();
+const openMatch=()=>aiSide!==null&&difficulty==='red';
 let busy=false;
 let matchStats=null,resultShown=false;
 let publicCardKnowledge=new Set(),discardKnowledge=[new Set(),new Set()];
@@ -68,7 +70,7 @@ function cardText(c){return (colors[c.color]?.[0]??'')+' · '+c.effects.map(desc
 function pick(type,i){picked={type,i};render();if(matchMedia('(max-width:800px)').matches)$('#actions').scrollIntoView({block:'nearest'});$('#actions h2')?.focus({preventScroll:true});}
 function scheduleAI(){
  if(!aiTurn()||timer!==null||busy)return;
- timer=setTimeout(()=>{timer=null;if(!aiTurn())return;try{const r=searchModule.search(g,championModel,32,1,false),a=r.actions[r.index];if(!a)throw Error('no legal plan');const source=a[0]==='landmark'?$('#landmarks').children[a[1]]:a[0]==='choice'?$('#actions'):$(`[data-slot="${a[1]}"]`);transition(()=>a[0]==='choice'?g.select(a[1]):g.action(...a),source,a[0],a[0]==='landmark'?g.s.market[a[1]]:null);}catch(e){console.error(e);$('#actions').append(el('p','电脑未能继续行动，请返回准备界面重开。'));}},450);
+ timer=setTimeout(()=>{timer=null;if(!aiTurn())return;try{const a=searchModule.playDifficulty(g,championModel,difficulty,{cards:new Set([...publicCardKnowledge,...discardKnowledge[aiSide]]),landmarks:seenLandmarks,tokens:seenTokens},Math.floor(Math.random()*2**32));if(!a)throw Error('no legal plan');const source=a[0]==='landmark'?$('#landmarks').children[a[1]]:a[0]==='choice'?$('#actions'):$(`[data-slot="${a[1]}"]`);transition(()=>a[0]==='choice'?g.select(a[1]):g.action(...a),source,a[0],a[0]==='landmark'?g.s.market[a[1]]:null);}catch(e){console.error(e);$('#actions').append(el('p','电脑未能继续行动，请返回准备界面重开。'));}},450);
 }
 function execute(type,i){if(aiTurn()||busy)return;const c=type==='landmark'?g.s.market[i]:g.s.slots[i]?.card;if(!c)return;if(type!=='discard'&&g.price(c).coins>g.s.players[g.s.turn].coins){notify('金币不足：还缺 '+(g.price(c).coins-g.s.players[g.s.turn].coins)+' 金币');return;}transition(()=>g.action(type,i),type==='landmark'?$('#landmarks').children[i]:$(`[data-slot="${i}"]`),type,type==='landmark'?c:null);}
 function art(src,alt){const n=el('img',undefined,'component-art');n.src=src;n.alt=alt;n.decoding='async';return n;}
@@ -252,7 +254,7 @@ function drawCards(){
  const s=g.s,box=$('#cards'),max=Math.max(...s.slots.map(x=>s.slots.filter(y=>y.Row===x.Row).length));
  box.style.gridTemplateColumns='repeat('+(max*2)+',minmax(0,1fr))';box.replaceChildren();
  const counts={};for(const x of s.slots){const i=counts[x.Row]??0;counts[x.Row]=i+1;if(x.taken)continue;
-  const row=s.slots.filter(y=>y.Row===x.Row).length, open=g.available(x), vis=g.visible(x), c=x.card;
+  const row=s.slots.filter(y=>y.Row===x.Row).length, open=g.available(x), vis=!x.taken&&(openMatch()||g.visible(x)), c=x.card;
   const n=btn(undefined,()=>execute('play',x.ID),'card '+(vis?(open?'open':'blocked'):'back'));n.dataset.slot=x.ID;n.disabled=!open||!!s.choice||!!s.victory||aiTurn();
   n.style.gridColumnStart=s.chapter===3&&x.Row===4?2+i*4:max-row+1+i*2;n.style.gridColumnEnd='span 2';n.style.gridRow=x.Row;
   if(vis){n.style.setProperty('--c',colors[c.color][1]);n.append(el('b',colors[c.color][0]),el('span',c.effects.map(description).join('；')));if(c.chain?.requiresForFree&&s.players[viewerSide()].played.some(own=>own.chain.grants===c.chain.requiresForFree))n.classList.add('chain-ready');if(open)n.append(el('small',g.price(c).coins+' 金币'));}
@@ -433,7 +435,14 @@ $('#owned-close').onclick=()=>{$('#owned-detail').close();$('#owned-content').cl
 function render(){
  hideTip();
  hideOwnedZoom();
- const s=g.s;for(const slot of s.slots)if(g.visible(slot))publicCardKnowledge.add(slot.card.id);for(const p of s.players)for(const c of p.played)publicCardKnowledge.add(c.id);if(s.choice?.label.startsWith('从弃牌堆'))for(const c of s.discard)discardKnowledge[s.turn].add(c.id);
+ const s=g.s;
+ for(const tile of s.market)seenLandmarks.add(tile.FortressToPlaceTo);
+ if(s.choice?.apply.kind==='token')for(const t of s.choice.options.map(o=>o.value)){
+  if(!t?.race)continue;
+  const observed=s.choice.options.map(o=>o.value).filter(x=>x?.race===t.race).map(x=>x.id);
+  seenTokens.set(t.race,[...new Set([...observed,...(seenTokens.get(t.race)??[])])]);
+ }
+ for(const slot of s.slots)if(g.visible(slot))publicCardKnowledge.add(slot.card.id);for(const p of s.players)for(const c of p.played)publicCardKnowledge.add(c.id);if(s.choice?.label.startsWith('从弃牌堆'))for(const c of s.discard)discardKnowledge[s.turn].add(c.id);
  $('#chapter').textContent='第 '+s.chapter+' 章';$('#turn').textContent=s.victory?(s.victory.winner===null?'双方平局':names[s.victory.winner]+'获胜'):names[s.turn]+(aiTurn()?'（电脑）':'')+'行动';
  drawMap();drawCards();drawActions();
  $('#players').replaceChildren(...s.players.map((p,i)=>{
@@ -479,18 +488,24 @@ $('#start').onclick=async()=>{
  if(pve&&!championModel){
   loading=true;button.disabled=true;button.textContent='正在加载电脑模型…';$('#status').textContent='';
   try{
-   const [module,model]=await Promise.all([import('./model-search-r0703.mjs'),read('./champion-r0703.json')]);
+   const [module,model]=await Promise.all([import('./model-search-r0703-levels.mjs'),read('./champion-r0703.json')]);
    const spec=module.schema();
    if(model.schema!==spec.version||model.input!==spec.input||model.actionInput!==spec.actionInput)throw Error('模型维度不匹配');
    searchModule=module;championModel=model;
   }catch(e){$('#status').textContent='电脑模型加载失败，请重试。';console.error(e);return;}
   finally{loading=false;button.disabled=false;button.textContent='开始对战';}
  }
- $('#status').textContent='';aiSide=pve?(seat==='random'?Math.floor(Math.random()*2):1-Number(seat)):null;
+ $('#status').textContent='';difficulty=$('#difficulty').value;seenLandmarks=new Set();seenTokens=new Map();aiSide=pve?(seat==='random'?Math.floor(Math.random()*2):1-Number(seat)):null;
+ $('#pyramid-hint').textContent=openMatch()?'本章卡牌全部翻开，但只有未被遮挡的牌可拿取。':'有亮色描边的牌可拿取；背面牌在露出后才翻开。';
  g=pve?createGame(searchModule.cards,searchModule.board,Math.random,{training:true}):createGame(data,board);
  matchStats={startedAt:Date.now(),endedAt:null,players:[0,1].map(()=>({turns:0,build:0,discard:0,landmark:0,landmarks:[],choices:0}))};resultShown=false;$('#match-summary').hidden=true;publicCardKnowledge=new Set();discardKnowledge=[new Set(),new Set()];picked=null;$('#ring').replaceChildren();$('#lobby').hidden=true;$('#game').hidden=false;render();window.scrollTo(0,0);scheduleAI();
 };
 $('#return').onclick=()=>{if(!g.s.victory&&!confirm('返回准备界面将结束本局。确定返回？'))return;ringDismiss?.();ringVisibility?.abort();hideTip();clearTimeout(timer);timer=null;g=null;picked=null;$('#game').hidden=true;$('#lobby').hidden=false;$('#start').focus();window.scrollTo(0,0);};
-$('#mode').onchange=()=>{$('#seat-field').hidden=$('#mode').value==='pvp';};
+function updateDifficulty(){
+ const pvp=$('#mode').value==='pvp';$('#seat-field').hidden=pvp;$('#difficulty-field').hidden=pvp;
+ $('#difficulty-note').textContent=pvp?'索伦先手。双方轮流操作。':$('#difficulty').value==='red'?'公开信息：双方都能看到本章所有牌面；仍须按遮挡规则拿牌。电脑按完整牌序搜索。':'正常信息：暗牌只在解锁后翻开，电脑不读取实际暗牌及后续牌序。';
+}
+$('#mode').onchange=$('#difficulty').onchange=updateDifficulty;
+updateDifficulty();
 const read=async f=>{const r=await fetch(f);if(!r.ok)throw Error(f);return r.json();};
 try{[data,board,artwork]=await Promise.all([read('./chapter-cards.json?v=2'),read('./board.json'),read('./original-art/manifest.json?v=3').catch(()=>null)]);if(data.length!==69||board.layouts.length!==3)throw Error('数据不完整');if(artwork&&data.every(c=>artwork[c.id]))document.body.classList.add('original-art');else artwork=null;$('#start').disabled=false;$('#start').textContent='开始对战';if(artwork)preloadArt();}catch(e){$('#status').textContent='无法载入游戏资料，请刷新页面重试。';console.error(e);}

@@ -119,7 +119,7 @@ export function createGame(cards,board,random=Math.random,{snapshot,training=fal
  function fork(){
   if(!training)throw Error('Fork requires a predealt training game');
   const state={...s,players:s.players.map(x=>({...x,played:[...x.played],races:{...x.races},tokens:[...x.tokens]})),units:s.units.map(u=>[...u]),forts:[...s.forts],market:[...s.market],landmarks:[...s.landmarks],discard:[...s.discard],slots:s.slots.map(x=>({...x})),queue:[...s.queue],log:[]};
-  return createGame(cards,board,random,{training,snapshot:{state,decks,stacks:Object.fromEntries(Object.entries(stacks).map(([k,a])=>[k,[...a]]))}});
+  return createGame(cards,board,random,{training,snapshot:{state,decks:[...decks],stacks:Object.fromEntries(Object.entries(stacks).map(([k,a])=>[k,[...a]]))}});
  }
  const game={s,price,available,visible,count,raceCount,action,select,regions,skillEffects};
  if(training)Object.assign(game,{fork,decks,stacks});

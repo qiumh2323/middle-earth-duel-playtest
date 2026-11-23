@@ -1,8 +1,23 @@
 {
-  "version": "v0.36",
+  "version": "v0.37",
   "generation": 703,
-  "simulations": 32,
-  "information": "AI sees full deal",
+  "modes": {
+    "blue": {
+      "worlds": 4,
+      "simulations": 16,
+      "open": false
+    },
+    "green": {
+      "worlds": 4,
+      "simulations": 64,
+      "open": false
+    },
+    "red": {
+      "worlds": 1,
+      "simulations": 512,
+      "open": true
+    }
+  },
   "model": "champion-r0703.json",
   "sha256": "d25b2392019350996119a716de4d6f827b4b8669ba66bd1e879e95658e37f23d"
 }
